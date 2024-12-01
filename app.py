@@ -1,60 +1,69 @@
-from flask import Flask, request, jsonify
-from db import db
-from models import Customer, CustomerAccount, Product, Order
-import os
-from dotenv import load_dotenv
+import logging
+from flask import Flask, request, jsonify, abort
 
-load_dotenv()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{os.getenv('DB_USERNAME')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}"
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Initialize the database
-@app.before_first_request
-def create_tables():
-    db.init_app(app)
-    db.create_all()
+# Sample Data
+customers = []
 
-# Customer Management Endpoints
+# Routes
+@app.route('/')
+def home():
+    logging.info("Accessed home route")
+    return "Welcome to the Customer Management API!"
 
 @app.route('/customers', methods=['POST'])
 def create_customer():
     data = request.get_json()
-    new_customer = Customer(name=data['name'], email=data['email'], phone_number=data['phone_number'])
-    db.session.add(new_customer)
-    db.session.commit()
-    return jsonify({'message': 'Customer created successfully'}), 201
+    if not data or not all(k in data for k in ('name', 'email', 'phone_number')):
+        logging.warning("Missing customer data")
+        abort(400, description="Missing customer data")
+    new_customer = {
+        'id': len(customers) + 1,
+        'name': data['name'],
+        'email': data['email'],
+        'phone_number': data['phone_number']
+    }
+    customers.append(new_customer)
+    logging.info(f"Customer created: {new_customer}")
+    return jsonify({'message': 'Customer created successfully', 'customer': new_customer}), 201
 
 @app.route('/customers/<int:id>', methods=['GET'])
 def get_customer(id):
-    customer = Customer.query.get(id)
+    customer = next((c for c in customers if c['id'] == id), None)
     if not customer:
-        return jsonify({'message': 'Customer not found'}), 404
-    return jsonify({'id': customer.id, 'name': customer.name, 'email': customer.email, 'phone_number': customer.phone_number})
+        logging.error(f"Customer with ID {id} not found")
+        abort(404, description="Customer not found")
+    logging.info(f"Customer retrieved: {customer}")
+    return jsonify(customer)
 
 @app.route('/customers/<int:id>', methods=['PUT'])
 def update_customer(id):
     data = request.get_json()
-    customer = Customer.query.get(id)
+    if not data:
+        logging.warning("Missing update data")
+        abort(400, description="Missing update data")
+    customer = next((c for c in customers if c['id'] == id), None)
     if not customer:
-        return jsonify({'message': 'Customer not found'}), 404
-    customer.name = data.get('name', customer.name)
-    customer.email = data.get('email', customer.email)
-    customer.phone_number = data.get('phone_number', customer.phone_number)
-    db.session.commit()
-    return jsonify({'message': 'Customer updated successfully'})
+        logging.error(f"Customer with ID {id} not found")
+        abort(404, description="Customer not found")
+    customer.update(data)
+    logging.info(f"Customer updated: {customer}")
+    return jsonify({'message': 'Customer updated successfully', 'customer': customer})
 
 @app.route('/customers/<int:id>', methods=['DELETE'])
 def delete_customer(id):
-    customer = Customer.query.get(id)
+    global customers
+    customer = next((c for c in customers if c['id'] == id), None)
     if not customer:
-        return jsonify({'message': 'Customer not found'}), 404
-    db.session.delete(customer)
-    db.session.commit()
+        logging.error(f"Customer with ID {id} not found")
+        abort(404, description="Customer not found")
+    customers = [c for c in customers if c['id'] != id]
+    logging.info(f"Customer deleted: {customer}")
     return jsonify({'message': 'Customer deleted successfully'})
-
-# Additional routes from routes.py can be added here following the same pattern.
 
 if __name__ == '__main__':
     app.run(debug=True)
