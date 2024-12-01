@@ -1,7 +1,7 @@
 # routes.py
 
 from flask import Flask, request, jsonify, abort
-from models import customers
+from models import customers, orders
 import logging
 
 # Configure logging
@@ -51,3 +51,36 @@ def customer_handler(id):
         customers = [c for c in customers if c['id'] != id]
         logging.info(f"Customer deleted: {customer}")
         return jsonify({'message': 'Customer deleted successfully'})
+
+@app.route('/orders', methods=['GET', 'POST'])
+def orders_handler():
+    if request.method == 'POST':
+        data = request.get_json()
+        if not data or not all(k in data for k in ('customer_id', 'product_id', 'quantity', 'status')):
+            logging.warning("Missing order data")
+            abort(400, description="Missing order data")
+        new_order = {
+            'id': len(orders) + 1,
+            'customer_id': data['customer_id'],
+            'product_id': data['product_id'],
+            'quantity': data['quantity'],
+            'status': data['status']
+        }
+        orders.append(new_order)
+        logging.info(f"Order created: {new_order}")
+        return jsonify({'message': 'Order created successfully', 'order': new_order}), 201
+    elif request.method == 'GET':
+        return jsonify(orders)
+
+@app.route('/orders/<int:id>', methods=['GET', 'DELETE'])
+def order_handler(id):
+    order = next((o for o in orders if o['id'] == id), None)
+    if not order:
+        logging.warning(f"Order not found: {id}")
+        abort(404, description="Order not found")
+    if request.method == 'GET':
+        return jsonify(order)
+    elif request.method == 'DELETE':
+        orders.remove(order)
+        logging.info(f"Order deleted: {id}")
+        return jsonify({'message': 'Order deleted successfully'})
